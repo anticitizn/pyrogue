@@ -16,6 +16,8 @@ FOV_ALGO = 0 #default FOV algorithm
 FOV_LIGHT_WALLS = True
 TORCH_RADIUS = 10
 
+MAX_ROOM_MONSTERS = 3
+
 color_dark_wall = tcod.Color(0, 0, 100)
 color_light_wall = tcod.Color(130, 110, 50)
 color_dark_ground = tcod.Color(50, 50, 150)
@@ -32,14 +34,16 @@ class Tile:
 		self.block_sight = block_sight
 
 class Object:
-	def __init__(self, x, y, char, color):
+	def __init__(self, x, y, char, name, color, blocks=False):
 		self.x = x
 		self.y = y
 		self.char = char
 		self.color = color
+		self.name = name
+		self.blocks = blocks
 
 	def move(self, dx, dy):
-		if not map[self.x + dx][self.y + dy].blocked:
+		if not is_blocked(self.x + dx, self.y + dy):
 			self.x += dx
 			self.y += dy
 
@@ -53,6 +57,37 @@ class Object:
 		#erase the character
 		tcod.console_put_char(con, self.x, self.y, ' ', tcod.BKGND_NONE)
 
+def is_blocked(x, y):
+	#testing the map tile first
+	if map[x][y].blocked:
+		return True
+
+	#testing for blocking objects now
+	for object in objects:
+		if object.blocks and object.x == x and object.y == y:
+			return True
+
+	return False
+
+def place_objects(room):
+	num_monsters = tcod.random_get_int(0, 0, MAX_ROOM_MONSTERS)
+	#chooses a random number of monsters
+
+	for i in range(num_monsters):
+		x = tcod.random_get_int(0, room.x1, room.x2)
+		y = tcod.random_get_int(0, room.y1, room.y2)
+
+		if not is_blocked(x, y):
+			if tcod.random_get_int(0, 0, 100) < 80:
+				#creates an orc
+				monster = Object(x, y, 'o', 'orc', tcod.desaturated_green,
+					blocks=True)
+			else:
+				#creates a troll
+				monster = Object(x, y, 'T', 'troll', tcod.darker_green,
+					blocks=True)
+
+			objects.append(monster)
 class Rect:
 	def __init__(self, x, y, w, h):
 		self.x1 = x
@@ -144,6 +179,7 @@ def make_map():
 					create_v_tunnel(prev_y, new_y, prev_x)
 					create_h_tunnel(prev_x, new_x, new_y)
 
+			place_objects(new_room)
 			rooms.append(new_room)
 			num_rooms += 1
 
@@ -213,15 +249,14 @@ font_path = 'arial10x10.png'
 font_flags = tcod.FONT_TYPE_GREYSCALE | tcod.FONT_LAYOUT_TCOD
 tcod.console_set_custom_font(font_path, font_flags)
 
-window_title = 'Python 3 libtcod tutorial'
+window_title = 'Py3 Rogue'
 fullscreen = False
 tcod.console_init_root(SCREEN_WIDTH, SCREEN_HEIGHT, window_title, fullscreen)
 con = tcod.console_new(SCREEN_WIDTH, SCREEN_HEIGHT)
 tcod.sys_set_fps(LIMIT_FPS)
 
-player = Object(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2, '@', tcod.white)
-npc = Object(SCREEN_WIDTH // 2 - 5, SCREEN_HEIGHT // 2, '@', tcod.yellow)
-objects = [npc, player]
+player = Object(0, 0, '@', 'player', tcod.white, blocks=True)
+objects = [player]
 
 make_map()
 
