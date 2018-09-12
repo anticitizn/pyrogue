@@ -25,6 +25,7 @@ class Tile:
 	#a tile of the map
 	def __init__(self, blocked, block_sight = None):
 		self.blocked = blocked
+		self.explored = False
 
 		#if a tile is blocked, it also blocks sight by default
 		block_sight = blocked if block_sight is None else None
@@ -192,14 +193,16 @@ def render_all():
 				visible = tcod.map_is_in_fov(fov_map, x, y)
 				wall = map[x][y].block_sight
 				if not visible:
-					if wall:
-						tcod.console_set_char_background(con, x, y, color_dark_wall, tcod.BKGND_SET)
-					else:
-						tcod.console_set_char_background(con, x, y, color_dark_ground, tcod.BKGND_SET)
+					if map[x][y].explored:
+						if wall:
+							tcod.console_set_char_background(con, x, y, color_dark_wall, tcod.BKGND_SET)
+						else:
+							tcod.console_set_char_background(con, x, y, color_dark_ground, tcod.BKGND_SET)
 				else:
 					if wall:
 						tcod.console_set_char_background(con, x, y, color_light_wall, tcod.BKGND_SET)
 					else: tcod.console_set_char_background(con, x, y, color_light_ground, tcod.BKGND_SET)
+					map[x][y].explored = True
 	for object in objects:
 		object.draw()
 
