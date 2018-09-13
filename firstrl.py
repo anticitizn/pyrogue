@@ -1,4 +1,5 @@
 import libtcodpy as tcod
+import math
 
 SCREEN_WIDTH = 80
 SCREEN_HEIGHT = 50
@@ -34,14 +35,20 @@ class Tile:
 		self.block_sight = block_sight
 
 class Object:
-	def __init__(self, x, y, char, name, color, blocks=False):
+	def __init__(self, x, y, char, name, color, blocks=False, fighter=None, ai=None):
 		self.x = x
 		self.y = y
 		self.char = char
 		self.color = color
 		self.name = name
 		self.blocks = blocks
+		self.fighter = fighter
+		if self.fighter:
+			self.fighter.owner = self
 
+		self.ai = ai
+		if self.ai:
+			self.ai.owner = self
 	def move(self, dx, dy):
 		if not is_blocked(self.x + dx, self.y + dy):
 			self.x += dx
@@ -56,6 +63,59 @@ class Object:
 	def clear(self):
 		#erase the character
 		tcod.console_put_char(con, self.x, self.y, ' ', tcod.BKGND_NONE)
+
+	def move_towards(self, target_x, target_y):
+
+		dx = target_x - self.x
+		dy = target_y - self.y
+		distance = math.sqrt(dx ** 2 + dy ** 2)
+
+		dx = int(round(dx / distance))
+		dy = int(round(dy / distance))
+		self.move(dx, dy)
+
+	def distance_to(self, other):
+		dx = other.x - self.x
+		dy = other.y - self.y
+		return math.sqrt(dx **2 + dy ** 2)
+
+class Fighter:
+	def __init__(self, hp, defense, power, death_function=None):
+		self.max_hp = hp
+		self.hp = hp
+		self.defense = defense
+		self.power = power
+		self.death_function = death_function
+	def take_damage(self, damage):
+
+		if damage > 0:
+			self.hp -= damage
+
+			if self.hp <= 0:
+				function = self.death_function
+				if function is not None:
+					function(self.Owner)
+
+	def attack(self, target): 	
+		damage = self.power - target.fighter.defense
+
+		if damage > 0:
+			print(self.owner.name.capitalize() + ' attacks ' + target.name + 'for ' + str(damage) + ' hit points.')
+			target.fighter.take_damage(damage)
+		else: print(self.owner.name.capitalize() + ' attacks ' + target.name + ' but it has no effect!')
+		
+class BasicMonster:
+	def take_turn(self):
+		
+		monster = self.owner
+		if tcod.map_is_in_fov(fov_map, monster.x, monster.y):
+
+			if monster.distance_to(player) >= 2:
+				monster.move_towards(player.x, player.y)
+
+			elif player.fighter.hp > 0:
+				monster.fighter.attack(player)
+		
 
 def is_blocked(x, y):
 	#testing the map tile first
@@ -80,12 +140,18 @@ def place_objects(room):
 		if not is_blocked(x, y):
 			if tcod.random_get_int(0, 0, 100) < 80:
 				#creates an orc
+				fighter_component = Fighter(hp=10, defense=0, power=3)
+				ai_component = BasicMonster()
+
 				monster = Object(x, y, 'o', 'orc', tcod.desaturated_green,
-					blocks=True)
+					blocks=True, fighter=fighter_component, ai=ai_component)
 			else:
 				#creates a troll
+				fighter_component = Fighter(hp=16, defense=1, power=4)
+				ai_component = BasicMonster()
+
 				monster = Object(x, y, 'T', 'troll', tcod.darker_green,
-					blocks=True)
+					blocks=True, fighter=fighter_component, ai=ai_component)
 
 			objects.append(monster)
 class Rect:
@@ -192,27 +258,44 @@ def handle_keys():
 		tcod.console_set_fullscreen(not tcod.console_is_fullscreen())
 
 	elif key.vk == tcod.KEY_ESCAPE:
-		return True
-		#Exit game
+		return 'exit'
+		#exit game
 
 	global player_x, player_y
 
-	if tcod.console_is_key_pressed(tcod.KEY_UP):
-		player.move(0, -1)
-		fov_recompute = True
+	if game_state == 'playing':
+		if tcod.console_is_key_pressed(tcod.KEY_UP):
+			player_move_or_attack(0, -1)
 
-	elif tcod.console_is_key_pressed(tcod.KEY_DOWN):
-		player.move(0, +1)
-		fov_recompute = True
+		elif tcod.console_is_key_pressed(tcod.KEY_DOWN):
+			player_move_or_attack(0, +1)
+			
+		elif tcod.console_is_key_pressed(tcod.KEY_LEFT):
+			player_move_or_attack(-1, 0)
+			
+		elif tcod.console_is_key_pressed(tcod.KEY_RIGHT):
+			player_move_or_attack(+1, 0)
 		
-	elif tcod.console_is_key_pressed(tcod.KEY_LEFT):
-		player.move(-1, 0)
+		else:
+			return 'didnt-take-turn'
+
+def player_move_or_attack(dx, dy):
+	global fov_recompute
+
+	x = player.x + dx
+	y = player.y + dy
+
+	target = None
+	for object in objects:
+		if object.x == x and object.y == y:
+			target = object
+			break
+
+	if target is not None:
+		player.fighter.attack(target)
+	else:
+		player.move(dx, dy)
 		fov_recompute = True
-		
-	elif tcod.console_is_key_pressed(tcod.KEY_RIGHT):
-		player.move(+1, 0)
-		fov_recompute = True
-		
 
 def render_all():
 	global fov_map, color_dark_wall, color_light_wall
@@ -242,6 +325,10 @@ def render_all():
 	for object in objects:
 		object.draw()
 
+	tcod.console_set_default_foreground(con, tcod.white)
+	tcod.console_print_ex(con, 1, SCREEN_HEIGHT - 2, tcod.BKGND_NONE, tcod.LEFT,
+		'HP: ' + str(player.fighter.hp) + '/' + str(player.fighter.max_hp))
+
 	tcod.console_blit(con, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, 0, 0, 0)
 
 
@@ -255,7 +342,11 @@ tcod.console_init_root(SCREEN_WIDTH, SCREEN_HEIGHT, window_title, fullscreen)
 con = tcod.console_new(SCREEN_WIDTH, SCREEN_HEIGHT)
 tcod.sys_set_fps(LIMIT_FPS)
 
-player = Object(0, 0, '@', 'player', tcod.white, blocks=True)
+game_state = 'playing'
+player_action = None
+
+fighter_component = Fighter(hp=30, defense=2, power=5)
+player = Object(0, 0, '@', 'player', tcod.white, blocks=True, fighter=fighter_component)
 objects = [player]
 
 make_map()
@@ -278,7 +369,11 @@ while not tcod.console_is_window_closed():
 	#erases all the old chars
 
 
-	exit = handle_keys()
-
-	if exit:
+	player_action = handle_keys()
+	if player_action == 'exit':
 		break
+
+	if game_state == 'playing' and player_action != 'didnt-take-turn':
+		for object in objects:
+			if object.ai:
+				object.ai.take_turn()
