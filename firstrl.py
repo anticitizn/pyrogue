@@ -1,11 +1,20 @@
 import libtcodpy as tcod
 import math
+import textwrap
 
 SCREEN_WIDTH = 80
 SCREEN_HEIGHT = 50
 
 MAP_WIDTH = 80
-MAP_HEIGHT = 45
+MAP_HEIGHT = 43
+
+BAR_WIDTH = 20
+PANEL_HEIGHT = 7
+PANEL_Y = SCREEN_HEIGHT - PANEL_HEIGHT
+
+MSG_X = BAR_WIDTH + 2
+MSG_WIDTH = SCREEN_WIDTH - BAR_WIDTH - 2
+MSG_HEIGHT = PANEL_HEIGHT - 1
 
 LIMIT_FPS = 20
 
@@ -80,7 +89,7 @@ class Object:
 		return math.sqrt(dx **2 + dy ** 2)
 
 	def send_to_back(self):
-		#make this object be drawn first
+		#make this object be drawn first by sending it to the first place in the list of objects
 		global objects
 		objects.remove(self)
 		objects.insert(0, self)
@@ -106,9 +115,9 @@ class Fighter:
 		damage = self.power - target.fighter.defense
 
 		if damage > 0:
-			print(self.owner.name.capitalize() + ' attacks ' + target.name + ' for ' + str(damage) + ' hit points.')
+			message(str(self.owner.name.capitalize() + ' attacks ' + target.name + ' for ' + str(damage) + ' hit points.'))
 			target.fighter.take_damage(damage)
-		else: print(self.owner.name.capitalize() + ' attacks ' + target.name + ' but it has no effect!')
+		else: message(str(self.owner.name.capitalize() + ' attacks ' + target.name + ' but it has no effect!'))
 
 class BasicMonster:
 	def take_turn(self):
@@ -305,14 +314,14 @@ def player_move_or_attack(dx, dy):
 
 def player_death(player):
 	global game_state
-	print('You died!')
+	message('You died!', tcod.red)
 	game_state = 'dead'
 
 	player.char = '%'
 	player.color = tcod.dark_red
 
 def monster_death(monster):
-	print(monster.name.capitalize() + ' is dead!')
+	message(monster.name.capitalize() + ' is dead!', tcod.orange)
 	monster.char = '%'
 	monster.color = tcod.dark_red
 	monster.blocks = False
@@ -350,12 +359,51 @@ def render_all():
 		object.draw()
 	player.draw()
 
-	tcod.console_set_default_foreground(con, tcod.white)
-	tcod.console_print_ex(con, 1, SCREEN_HEIGHT - 2, tcod.BKGND_NONE, tcod.LEFT,
-		'HP: ' + str(player.fighter.hp) + '/' + str(player.fighter.max_hp))
+	tcod.console_blit(con, 0, 0, MAP_WIDTH, MAP_HEIGHT, 0, 0, 0)
 
-	tcod.console_blit(con, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, 0, 0, 0)
+	tcod.console_set_default_background(panel, tcod.black)
+	tcod.console_clear(panel)
 
+	#print the messages a line at a time
+	y = 1
+	for (line, color) in game_msgs:
+		tcod.console_set_default_foreground(panel, color)
+		tcod.console_print_ex(panel, MSG_X, y, tcod.BKGND_NONE, tcod.LEFT, line)
+		y += 1
+	
+	render_bar(1, 1, BAR_WIDTH, 'HP', player.fighter.hp, player.fighter.max_hp,
+		tcod.light_red, tcod.darker_red)
+	tcod.console_blit(panel, 0, 0, SCREEN_WIDTH, PANEL_HEIGHT, 0, 0, PANEL_Y)
+
+
+def render_bar(x, y, total_width, name, value, maximum, bar_color, back_color):
+
+	bar_width = int(float(value) / maximum * total_width)
+
+	#rendering background first
+	tcod.console_set_default_background(panel, back_color)
+	tcod.console_rect(panel, x, y, total_width, 1, False, tcod.BKGND_SCREEN)
+
+	#rendering the bar itself
+	tcod.console_set_default_background(panel, bar_color)
+	if bar_width > 0:
+		tcod.console_rect(panel, x, y, bar_width, 1, False, tcod.BKGND_SCREEN)
+
+	#centered text and the actual values
+	tcod.console_set_default_foreground(panel, tcod.white)
+	tcod.console_print_ex(panel, x + total_width // 2, y, tcod.BKGND_NONE, tcod.CENTER,
+		name + ': ' + str(value) + '/' + str(maximum))
+
+def message(new_msg, color=tcod.white):
+	new_msg_lines = textwrap.wrap(new_msg, MSG_WIDTH)
+
+	for line in new_msg_lines:
+		if len(game_msgs) == MSG_HEIGHT:
+			del game_msgs[0]
+
+		game_msgs.append( (line, color) )
+
+	
 
 font_path = 'arial10x10.png'
 font_flags = tcod.FONT_TYPE_GREYSCALE | tcod.FONT_LAYOUT_TCOD
@@ -364,7 +412,7 @@ tcod.console_set_custom_font(font_path, font_flags)
 window_title = 'Py3 Rogue'
 fullscreen = False
 tcod.console_init_root(SCREEN_WIDTH, SCREEN_HEIGHT, window_title, fullscreen)
-con = tcod.console_new(SCREEN_WIDTH, SCREEN_HEIGHT)
+con = tcod.console_new(MAP_WIDTH, MAP_HEIGHT)
 tcod.sys_set_fps(LIMIT_FPS)
 
 game_state = 'playing'
@@ -374,6 +422,10 @@ fighter_component = Fighter(hp=30, defense=2, power=5, death_function=player_dea
 player = Object(0, 0, '@', 'player', tcod.white, blocks=True, fighter=fighter_component)
 objects = [player]
 
+game_msgs = []
+
+panel = tcod.console_new(SCREEN_WIDTH, PANEL_HEIGHT)
+
 make_map()
 
 fov_recompute = True
@@ -381,6 +433,8 @@ fov_map = tcod.map_new(MAP_WIDTH, MAP_HEIGHT)
 for y in range(MAP_HEIGHT):
 	for x in range(MAP_WIDTH):
 		tcod.map_set_properties(fov_map, x, y, not map[x][y].block_sight, not map[x][y].blocked)
+
+message('Welcome, stranger! Prepare to perish in the Dungeons of Peril!', tcod.red)
 
 while not tcod.console_is_window_closed():
 
