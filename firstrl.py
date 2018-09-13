@@ -79,6 +79,12 @@ class Object:
 		dy = other.y - self.y
 		return math.sqrt(dx **2 + dy ** 2)
 
+	def send_to_back(self):
+		#make this object be drawn first
+		global objects
+		objects.remove(self)
+		objects.insert(0, self)
+
 class Fighter:
 	def __init__(self, hp, defense, power, death_function=None):
 		self.max_hp = hp
@@ -94,16 +100,16 @@ class Fighter:
 			if self.hp <= 0:
 				function = self.death_function
 				if function is not None:
-					function(self.Owner)
+					function(self.owner)
 
 	def attack(self, target): 	
 		damage = self.power - target.fighter.defense
 
 		if damage > 0:
-			print(self.owner.name.capitalize() + ' attacks ' + target.name + 'for ' + str(damage) + ' hit points.')
+			print(self.owner.name.capitalize() + ' attacks ' + target.name + ' for ' + str(damage) + ' hit points.')
 			target.fighter.take_damage(damage)
 		else: print(self.owner.name.capitalize() + ' attacks ' + target.name + ' but it has no effect!')
-		
+
 class BasicMonster:
 	def take_turn(self):
 		
@@ -140,14 +146,14 @@ def place_objects(room):
 		if not is_blocked(x, y):
 			if tcod.random_get_int(0, 0, 100) < 80:
 				#creates an orc
-				fighter_component = Fighter(hp=10, defense=0, power=3)
+				fighter_component = Fighter(hp=10, defense=0, power=3, death_function=monster_death)
 				ai_component = BasicMonster()
 
 				monster = Object(x, y, 'o', 'orc', tcod.desaturated_green,
 					blocks=True, fighter=fighter_component, ai=ai_component)
 			else:
 				#creates a troll
-				fighter_component = Fighter(hp=16, defense=1, power=4)
+				fighter_component = Fighter(hp=16, defense=1, power=4, death_function=monster_death)
 				ai_component = BasicMonster()
 
 				monster = Object(x, y, 'T', 'troll', tcod.darker_green,
@@ -287,7 +293,7 @@ def player_move_or_attack(dx, dy):
 
 	target = None
 	for object in objects:
-		if object.x == x and object.y == y:
+		if object.fighter and object.x == x and object.y == y:
 			target = object
 			break
 
@@ -296,6 +302,24 @@ def player_move_or_attack(dx, dy):
 	else:
 		player.move(dx, dy)
 		fov_recompute = True
+
+def player_death(player):
+	global game_state
+	print('You died!')
+	game_state = 'dead'
+
+	player.char = '%'
+	player.color = tcod.dark_red
+
+def monster_death(monster):
+	print(monster.name.capitalize() + ' is dead!')
+	monster.char = '%'
+	monster.color = tcod.dark_red
+	monster.blocks = False
+	monster.fighter = None
+	monster.ai = None
+	monster.name = 'remains of ' + monster.name
+	monster.send_to_back()
 
 def render_all():
 	global fov_map, color_dark_wall, color_light_wall
@@ -324,6 +348,7 @@ def render_all():
 					map[x][y].explored = True
 	for object in objects:
 		object.draw()
+	player.draw()
 
 	tcod.console_set_default_foreground(con, tcod.white)
 	tcod.console_print_ex(con, 1, SCREEN_HEIGHT - 2, tcod.BKGND_NONE, tcod.LEFT,
@@ -345,7 +370,7 @@ tcod.sys_set_fps(LIMIT_FPS)
 game_state = 'playing'
 player_action = None
 
-fighter_component = Fighter(hp=30, defense=2, power=5)
+fighter_component = Fighter(hp=30, defense=2, power=5, death_function=player_death)
 player = Object(0, 0, '@', 'player', tcod.white, blocks=True, fighter=fighter_component)
 objects = [player]
 
