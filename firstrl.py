@@ -18,6 +18,10 @@ MSG_HEIGHT = PANEL_HEIGHT - 1
 
 LIMIT_FPS = 20
 
+PLAYER_SPEED = 2
+DEFAULT_SPEED = 8
+DEFAULT_ATTACK_SPEED = 20
+
 ROOM_MAX_SIZE = 10
 ROOM_MIN_SIZE = 6
 MAX_ROOMS = 30
@@ -44,7 +48,7 @@ class Tile:
 		self.block_sight = block_sight
 
 class Object:
-	def __init__(self, x, y, char, name, color, blocks=False, fighter=None, ai=None):
+	def __init__(self, x, y, char, name, color, blocks=False, fighter=None, ai=None, speed=DEFAULT_SPEED):
 		self.x = x
 		self.y = y
 		self.char = char
@@ -52,6 +56,8 @@ class Object:
 		self.name = name
 		self.blocks = blocks
 		self.fighter = fighter
+		self.speed = speed
+		self.wait = 0
 		if self.fighter:
 			self.fighter.owner = self
 
@@ -62,7 +68,7 @@ class Object:
 		if not is_blocked(self.x + dx, self.y + dy):
 			self.x += dx
 			self.y += dy
-
+			self.wait = self.speed
 	def draw(self):
 		if tcod.map_is_in_fov(fov_map, self.x, self.y):
 			#set the color and then draw the character that represents this object at its position
@@ -95,14 +101,14 @@ class Object:
 		objects.insert(0, self)
 
 class Fighter:
-	def __init__(self, hp, defense, power, death_function=None):
+	def __init__(self, hp, defense, power, death_function=None, attack_speed=DEFAULT_ATTACK_SPEED):
 		self.max_hp = hp
 		self.hp = hp
 		self.defense = defense
 		self.power = power
 		self.death_function = death_function
+		self.attack_speed = attack_speed
 	def take_damage(self, damage):
-
 		if damage > 0:
 			self.hp -= damage
 
@@ -118,6 +124,7 @@ class Fighter:
 			message(str(self.owner.name.capitalize() + ' attacks ' + target.name + ' for ' + str(damage) + ' hit points.'))
 			target.fighter.take_damage(damage)
 		else: message(str(self.owner.name.capitalize() + ' attacks ' + target.name + ' but it has no effect!'))
+		self.owner.wait = self.attack_speed
 
 class BasicMonster:
 	def take_turn(self):
@@ -166,7 +173,7 @@ def place_objects(room):
 				ai_component = BasicMonster()
 
 				monster = Object(x, y, 'T', 'troll', tcod.darker_green,
-					blocks=True, fighter=fighter_component, ai=ai_component)
+					blocks=True, fighter=fighter_component, ai=ai_component, speed=10)
 
 			objects.append(monster)
 class Rect:
@@ -279,6 +286,9 @@ def handle_keys():
 	global player_x, player_y
 
 	if game_state == 'playing':
+		if player.wait > 0:
+			player.wait -= 1
+			return
 		if tcod.console_is_key_pressed(tcod.KEY_UP):
 			player_move_or_attack(0, -1)
 
@@ -370,7 +380,7 @@ def render_all():
 		tcod.console_set_default_foreground(panel, color)
 		tcod.console_print_ex(panel, MSG_X, y, tcod.BKGND_NONE, tcod.LEFT, line)
 		y += 1
-	
+
 	render_bar(1, 1, BAR_WIDTH, 'HP', player.fighter.hp, player.fighter.max_hp,
 		tcod.light_red, tcod.darker_red)
 	tcod.console_blit(panel, 0, 0, SCREEN_WIDTH, PANEL_HEIGHT, 0, 0, PANEL_Y)
@@ -419,7 +429,7 @@ game_state = 'playing'
 player_action = None
 
 fighter_component = Fighter(hp=30, defense=2, power=5, death_function=player_death)
-player = Object(0, 0, '@', 'player', tcod.white, blocks=True, fighter=fighter_component)
+player = Object(0, 0, '@', 'player', tcod.white, blocks=True, fighter=fighter_component, speed=PLAYER_SPEED)
 objects = [player]
 
 game_msgs = []
@@ -452,7 +462,10 @@ while not tcod.console_is_window_closed():
 	if player_action == 'exit':
 		break
 
-	if game_state == 'playing' and player_action != 'didnt-take-turn':
+	if game_state == 'playing':
 		for object in objects:
 			if object.ai:
-				object.ai.take_turn()
+				if object.wait > 0:
+					object.wait -= 1
+				else:
+					object.ai.take_turn()
